@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark"> <!-- ativa dark mode -->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Financeiro Pessoal - Dark Mode</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Configurações Tailwind para dark mode (class strategy)
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-6 text-center text-blue-400">💸 Meu Sistema Financeiro</h1>
+
+    <div class="bg-gray-800 p-4 rounded shadow mb-6">
+      <label class="block mb-2 font-medium">Salário</label>
+      <input id="salario" type="number" class="w-full p-2 rounded border border-gray-700 bg-gray-900 text-gray-200 placeholder-gray-500" placeholder="Ex: 3000" />
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded shadow grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <input id="nomeGasto" type="text" class="p-2 rounded border border-gray-700 bg-gray-900 text-gray-200 placeholder-gray-500" placeholder="Nome do gasto" />
+      <input id="valorGasto" type="number" class="p-2 rounded border border-gray-700 bg-gray-900 text-gray-200 placeholder-gray-500" placeholder="Valor total" />
+      <input id="parcelasGasto" type="number" class="p-2 rounded border border-gray-700 bg-gray-900 text-gray-200 placeholder-gray-500" placeholder="Parcelas" />
+      <input id="categoriaGasto" type="text" class="p-2 rounded border border-gray-700 bg-gray-900 text-gray-200 placeholder-gray-500" placeholder="Categoria" />
+      <button id="btnAdicionar" class="col-span-2 md:col-span-4 bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+        Adicionar Gasto
+      </button>
+    </div>
+
+    <div class="bg-gray-800 shadow p-4 rounded mb-6 flex justify-between items-center">
+      <div class="grid grid-cols-3 gap-4 text-center w-full max-w-md">
+        <div><strong>💰 Salário:</strong><br> R$ <span id="viewSalario">0.00</span></div>
+        <div><strong>📉 Gastos:</strong><br> R$ <span id="totalGastos">0.00</span></div>
+        <div><strong>✅ Saldo:</strong><br> R$ <span id="saldoRestante">0.00</span></div>
+      </div>
+      <button onclick="fecharMes()" class="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 ml-6">
+        Fechar Mês
+      </button>
+    </div>
+
+    <div class="bg-gray-800 shadow p-4 rounded mb-6">
+      <h2 class="text-lg font-bold mb-2">Distribuição de Gastos por Categoria</h2>
+      <canvas id="graficoGastos" height="150"></canvas>
+    </div>
+
+    <div class="bg-gray-800 shadow p-4 rounded">
+      <h2 class="text-lg font-bold mb-2">Gastos Cadastrados</h2>
+      <ul id="listaGastos" class="space-y-2"></ul>
+    </div>
+  </div>
+
+  <script>
+    // Seu JS permanece igual, só com a função atualizarResumo corrigida:
+    let salario = Number(localStorage.getItem("salario")) || 0;
+    let gastos = JSON.parse(localStorage.getItem("gastos")) || [];
+    let grafico;
+
+    document.getElementById("salario").value = salario;
+
+    document.getElementById("salario").addEventListener("change", () => {
+      salario = Number(document.getElementById("salario").value);
+      localStorage.setItem("salario", salario);
+      atualizarResumo();
+    });
+
+    document.getElementById("btnAdicionar").addEventListener("click", adicionarGasto);
+
+    function adicionarGasto() {
+      const nome = document.getElementById("nomeGasto").value;
+      const valorParcela = Number(document.getElementById("valorGasto").value);
+      const parcelas = Number(document.getElementById("parcelasGasto").value) || 1;
+      const categoria = document.getElementById("categoriaGasto").value;
+
+      if (!nome || !valorParcela || !categoria) {
+        alert("Preencha todos os campos corretamente.");
+        return;
+      }
+
+      gastos.push({
+        nome,
+        valor: valorParcela,
+        parcelas,
+        parcelasOriginais: parcelas,
+        valorParcela,
+        categoria
+      });
+
+      localStorage.setItem("gastos", JSON.stringify(gastos));
+
+      atualizarResumo();
+      renderizarGastos();
+      atualizarGrafico();
+
+      // limpar campos
+      document.getElementById("nomeGasto").value = "";
+      document.getElementById("valorGasto").value = "";
+      document.getElementById("parcelasGasto").value = "";
+      document.getElementById("categoriaGasto").value = "";
+    }
+
+    function atualizarResumo() {
+      const totalMensal = gastos.reduce((acc, g) => acc + (g.valorParcela || 0), 0);
+
+      document.getElementById("viewSalario").textContent = salario.toFixed(2);
+      document.getElementById("totalGastos").textContent = totalMensal.toFixed(2);
+      document.getElementById("saldoRestante").textContent = (salario - totalMensal).toFixed(2);
+    }
+
+    function renderizarGastos() {
+      const lista = document.getElementById("listaGastos");
+      lista.innerHTML = "";
+
+      gastos.forEach((g, i) => {
+        const fimParcelas = calcularFimParcelas(g);
+        const li = document.createElement("li");
+        li.className = "bg-gray-700 p-2 rounded shadow flex justify-between items-center";
+
+        li.innerHTML = `
+          <div>
+            <strong>${g.nome}</strong><br>
+            R$ ${g.valorParcela.toFixed(2)} • ${g.parcelas}x restantes • ${g.categoria}<br>
+            <small>Termina: ${fimParcelas}</small>
+          </div>
+          <div>
+            <button onclick="diminuirParcela(${i})" class="text-green-400 hover:underline mr-2">-1 parcela</button>
+            <button onclick="removerGasto(${i})" class="text-red-400 hover:underline">Remover</button>
+          </div>
+        `;
+
+        lista.appendChild(li);
+      });
+    }
+
+    function calcularFimParcelas(gasto) {
+      const hoje = new Date();
+      let mes = hoje.getMonth() + gasto.parcelas;
+      let ano = hoje.getFullYear();
+
+      while (mes > 11) {
+        mes -= 12;
+        ano++;
+      }
+
+      return `${(mes + 1).toString().padStart(2, '0')}/${ano}`;
+    }
+
+    function diminuirParcela(index) {
+      if (gastos[index].parcelas > 1) {
+        gastos[index].parcelas--;
+        localStorage.setItem("gastos", JSON.stringify(gastos));
+        atualizarResumo();
+        renderizarGastos();
+        atualizarGrafico();
+      }
+    }
+
+    function removerGasto(index) {
+      gastos.splice(index, 1);
+      localStorage.setItem("gastos", JSON.stringify(gastos));
+      atualizarResumo();
+      renderizarGastos();
+      atualizarGrafico();
+    }
+
+    function atualizarGrafico() {
+      const categorias = {};
+      gastos.forEach(g => {
+        categorias[g.categoria] = (categorias[g.categoria] || 0) + (g.valorParcela || 0);
+      });
+
+      const labels = Object.keys(categorias);
+      const valores = Object.values(categorias);
+
+      if (grafico) grafico.destroy();
+
+      const ctx = document.getElementById("graficoGastos").getContext("2d");
+      grafico = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Gastos por Categoria',
+            data: valores,
+            backgroundColor: ['#60A5FA', '#F87171', '#34D399', '#FBBF24', '#A78BFA', '#F472B6'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#cbd5e1' } }
+          }
+        }
+      });
+    }
+
+    function fecharMes() {
+      for (let i = gastos.length - 1; i >= 0; i--) {
+        if (gastos[i].parcelas > 1) {
+          gastos[i].parcelas--;
+        } else {
+          gastos.splice(i, 1);
+        }
+      }
+      localStorage.setItem("gastos", JSON.stringify(gastos));
+      atualizarResumo();
+      renderizarGastos();
+      atualizarGrafico();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      atualizarResumo();
+      renderizarGastos();
+      atualizarGrafico();
+    });
+  </script>
+</body>
+</html>
